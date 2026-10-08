@@ -90,13 +90,7 @@
     }
 
     /* ---------- Beer page ---------- */
-    .beer .sheet {
-      display: flex; flex-direction: column;
-      background:
-        linear-gradient(180deg, var(--paper) 0%, var(--paper) 44%, #fff3c4 60%, #f3c95a 70%, transparent 70.1%),
-        repeating-linear-gradient(178deg, rgba(0,0,0,.08) 0 2px, transparent 2px 9px),
-        linear-gradient(180deg, #6b4022 70%, #4a2b16 85%, #2d1a0d 100%);
-    }
+    .beer .sheet { display: flex; flex-direction: column; }
     .beer .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 22px 22px 0 30px; }
     .beer h2 {
       font-family: Oswald, sans-serif; font-weight: 600; text-transform: uppercase;
@@ -111,11 +105,19 @@
     .tag.trap { background: #4a2d1e; }
     .tag.na { background: var(--blue); }
     .tekst { margin: 0; font-size: 15.5px; line-height: 1.45; color: #2c2622; }
-    .stage { position: relative; flex: 1 0 230px; display: flex; align-items: flex-end; justify-content: center; margin: 10px -22px 0 -30px; padding-bottom: 64px; }
+    /* glow + wooden table travel with the bottle, whatever the text length */
+    .stage {
+      position: relative; flex: 1 0 340px; margin: 10px -22px 0 -30px;
+      background:
+        linear-gradient(180deg, var(--paper) 0%, #fff3c4 30%, #f3c95a 58%, transparent 58.1%),
+        repeating-linear-gradient(178deg, rgba(0,0,0,.08) 0 2px, transparent 2px 9px),
+        linear-gradient(180deg, #6b4022 58%, #4a2b16 80%, #2d1a0d 100%);
+    }
+    /* bottle fills the free space between the text and the ABV bar */
     .stage img {
-      height: min(36vh, 300px); width: auto; max-width: 70%; object-fit: contain;
+      position: absolute; z-index: 1; left: 50%; transform: translateX(-50%);
+      bottom: 60px; height: calc(100% - 64px); width: auto; max-width: 70%; object-fit: contain; object-position: bottom;
       filter: drop-shadow(10px 14px 10px rgba(0,0,0,.45));
-      position: relative; z-index: 1;
     }
     .nr {
       position: absolute; left: 30px; bottom: 76px; z-index: 2;
