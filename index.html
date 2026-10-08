@@ -61,32 +61,47 @@
       position: fixed; left: 0; right: 0;
       top: calc(var(--bar-h) + env(safe-area-inset-top));
       bottom: calc(var(--bar-h) + env(safe-area-inset-bottom));
-      display: flex; overflow-x: auto; overflow-y: hidden;
-      scroll-snap-type: x mandatory; scrollbar-width: none;
-      overscroll-behavior-x: contain;
+      display: grid; place-items: center; padding: 8px 16px 12px 22px;
+      touch-action: pan-y; z-index: 1;
     }
-    .book::-webkit-scrollbar { display: none; }
-    .page {
-      flex: 0 0 100%; height: 100%; scroll-snap-align: center; scroll-snap-stop: always;
-      display: grid; place-items: center; padding: 8px 16px 12px;
-      perspective: 1600px;
+    .book.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+    .stack { position: relative; width: 100%; max-width: 440px; height: 100%; max-height: 820px; perspective: 2200px; }
+    /* the unread rest of the booklet, peeking out at the right and bottom */
+    .edges {
+      position: absolute; inset: 0; z-index: 0; border-radius: 6px 14px 14px 6px; background: #efe6d6;
+      box-shadow: 0 18px 40px rgba(0,0,0,.45);
+    }
+    .page { position: absolute; inset: 0; display: none; transform-origin: left center; transform-style: preserve-3d; }
+    .page.on { display: block; }
+    .sheet, .back {
+      position: absolute; inset: 0; overflow: hidden;
+      backface-visibility: hidden; -webkit-backface-visibility: hidden;
     }
     .sheet {
-      position: relative; width: 100%; max-width: 440px; height: 100%; max-height: 820px;
-      border-radius: 6px 14px 14px 6px; overflow: hidden;
-      background: var(--paper);
-      box-shadow: 0 18px 40px rgba(0,0,0,.45), 0 2px 6px rgba(0,0,0,.3);
-      will-change: transform;
+      border-radius: 6px 14px 14px 6px; background: var(--paper);
+      box-shadow: 0 1px 4px rgba(0,0,0,.25);
     }
-    /* booklet spine + stacked page edges */
+    /* reverse side of a page while it is being turned */
+    .back {
+      transform: rotateY(180deg); border-radius: 14px 6px 6px 14px;
+      background: linear-gradient(270deg, rgba(0,0,0,.16), transparent 22px), linear-gradient(90deg, #f3ebdc, var(--paper) 70%);
+    }
+    /* booklet spine */
     .sheet::before {
       content: ""; position: absolute; inset: 0 auto 0 0; width: 18px; z-index: 3; pointer-events: none;
       background: linear-gradient(90deg, rgba(0,0,0,.22), rgba(0,0,0,.06) 45%, transparent);
     }
-    .sheet::after {
+    /* lighting while turning */
+    .sheet::after, .back::after {
       content: ""; position: absolute; inset: 0; z-index: 4; pointer-events: none;
-      background: linear-gradient(90deg, rgba(0,0,0,.35), transparent 70%);
+      background: linear-gradient(90deg, rgba(0,0,0,.45), rgba(0,0,0,.1) 60%, transparent);
       opacity: var(--shade, 0);
+    }
+    .back::after { background: linear-gradient(270deg, rgba(0,0,0,.4), rgba(0,0,0,.08) 70%); }
+    /* shadow the lifted page casts on the page underneath */
+    .cast {
+      position: absolute; top: 0; bottom: 0; left: 0; width: 90px; z-index: 2; display: none; pointer-events: none;
+      background: linear-gradient(90deg, rgba(0,0,0,.4), transparent);
     }
 
     /* ---------- Beer page ---------- */
@@ -199,7 +214,6 @@
 
     @media (prefers-reduced-motion: reduce) {
       .hint { animation: none; }
-      .sheet { transform: none !important; }
     }
   </style>
 </head>
@@ -213,7 +227,7 @@
     </button>
   </header>
 
-  <main class="book" id="book" aria-live="polite"></main>
+  <main class="book" id="book"><div class="stack" id="stack" aria-live="polite"><div class="edges" id="edges"></div><div class="cast" id="cast"></div></div></main>
 
   <nav class="bottombar">
     <div class="progress"><i id="progress"></i></div>
@@ -230,11 +244,9 @@
         <button class="close" id="closeSearch">Sluiten</button>
       </div>
       <div class="chips" id="chips">
-        <button class="chip" data-f="vat" aria-pressed="false">Van 't vat</button>
         <button class="chip" data-f="nonalc" aria-pressed="false">Alcoholvrij</button>
-        <button class="chip" data-f="trappist" aria-pressed="false">Trappist</button>
-        <button class="chip" data-f="sterk" aria-pressed="false">Sterk (8 %+)</button>
-        <button class="chip" data-f="wijn" aria-pressed="false">Wijn</button>
+        <button class="chip" data-f="vat" aria-pressed="false">Op tap</button>
+        <button class="chip" data-f="wijn" aria-pressed="false">Wijn/cava</button>
       </div>
       <ul class="results" id="results"></ul>
     </div>
@@ -243,6 +255,7 @@
   <script src="bieren.js"></script>
   <script>
     const book = document.getElementById('book');
+    const stack = document.getElementById('stack');
     const items = window.BIEREN;
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’‘]/g, "'");
@@ -257,8 +270,8 @@
     function addPage(cls, html, key) {
       const el = document.createElement('section');
       el.className = 'page ' + cls;
-      el.innerHTML = `<div class="sheet">${html}</div>`;
-      book.appendChild(el);
+      el.innerHTML = `<div class="sheet">${html}</div><div class="back"></div>`;
+      stack.appendChild(el);
       pages.push({ el, key });
       return pages.length - 1;
     }
@@ -312,19 +325,16 @@
       `<li><button data-go="${pageOf[b.nr]}"><span class="n ${isNonAlc(b) ? 'na' : ''}">${b.nr}</span><span>${esc(b.naam)}</span></button></li>`
     ).join('') + `<li><button data-go="${pageOf.W1}"><span class="n">🍷</span><span>Wijnen</span></button></li>`;
 
-    // ---------- Navigation ----------
+    // ---------- Navigation: pages turn around the spine like a real booklet ----------
     const pager = document.getElementById('pager');
     const progress = document.getElementById('progress');
     const prev = document.getElementById('prev');
     const next = document.getElementById('next');
+    const edges = document.getElementById('edges');
+    const cast = document.getElementById('cast');
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
     let current = 0;
-
-    function goTo(i, smooth = true) {
-      i = Math.max(0, Math.min(pages.length - 1, i));
-      const far = Math.abs(i - current) > 2;
-      book.scrollTo({ left: i * book.clientWidth, behavior: smooth && !far ? 'smooth' : 'instant' });
-      if (!smooth || far) onScroll();
-    }
+    let flip = null; // { top, under, to, theta, raf }
 
     function label(i) {
       const k = pages[i].key;
@@ -335,38 +345,131 @@
       return `Nr. ${k} / ${items.filter(b => b.type !== 'wijn').length}`;
     }
 
-    let ticking = false;
-    function onScroll() {
-      ticking = false;
-      const w = book.clientWidth, x = book.scrollLeft;
-      const idx = Math.round(x / w);
-      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      // page-turn feel: neighbours tilt away around the spine
-      for (let i = Math.max(0, idx - 1); i <= Math.min(pages.length - 1, idx + 1); i++) {
-        const p = (i * w - x) / w; // -1 … 1
-        const sheet = pages[i].el.firstElementChild;
-        if (reduce) continue;
-        sheet.style.transformOrigin = p < 0 ? 'right center' : 'left center';
-        sheet.style.transform = `rotateY(${(-p * 28).toFixed(2)}deg) scale(${(1 - Math.abs(p) * 0.08).toFixed(3)})`;
-        sheet.style.setProperty('--shade', Math.min(1, Math.abs(p) * 1.6).toFixed(2));
-      }
-      if (idx !== current) {
-        // reset pages that left the window
-        pages.forEach((pg, i) => { if (Math.abs(i - idx) > 1) { pg.el.firstElementChild.style.transform = ''; pg.el.firstElementChild.style.setProperty('--shade', 0); } });
-        current = idx;
-        const k = pages[idx].key;
-        history.replaceState(null, '', k === 'cover' ? location.pathname : '#' + k);
-      }
-      pager.textContent = label(idx);
-      progress.style.width = (idx / (pages.length - 1) * 100) + '%';
-      prev.disabled = idx === 0;
-      next.disabled = idx === pages.length - 1;
+    const shade = (el, front, back) => {
+      el.firstElementChild.style.setProperty('--shade', front.toFixed(3));
+      el.lastElementChild.style.setProperty('--shade', back.toFixed(3));
+    };
+
+    // Show only page i, lying flat.
+    function settle(i) {
+      if (flip) cancelAnimationFrame(flip.raf);
+      flip = null;
+      pages.forEach((p, k) => {
+        p.el.classList.toggle('on', k === i);
+        p.el.style.transform = ''; p.el.style.zIndex = '';
+        shade(p.el, 0, 0);
+      });
+      cast.style.display = 'none';
+      const changed = i !== current;
+      current = i;
+      const k = pages[i].key;
+      if (changed || location.hash) history.replaceState(null, '', k === 'cover' ? location.pathname : '#' + k);
+      pager.textContent = label(i);
+      progress.style.width = (i / (pages.length - 1) * 100) + '%';
+      prev.disabled = i === 0;
+      next.disabled = i === pages.length - 1;
+      // thinner stack of remaining pages the further you read
+      const left = Math.ceil((pages.length - 1 - i) / (pages.length - 1) * 4);
+      edges.style.boxShadow = [1, 2, 3, 4].slice(0, left).map(n => `${n * 1.5}px ${n * 1.5}px 0 ${n % 2 ? '#e2d7c3' : '#cdbfa6'}`)
+        .concat('0 18px 40px rgba(0,0,0,.45)').join(',');
+      edges.style.visibility = i === pages.length - 1 ? 'hidden' : '';
     }
-    book.addEventListener('scroll', () => { if (!ticking) { ticking = true; requestAnimationFrame(onScroll); } }, { passive: true });
-    addEventListener('resize', () => goTo(current, false));
+
+    // Prepare a turn from page `from` to page `to`. The page that rotates (`top`) is the current one
+    // when going forward, or the target page coming back when going backward.
+    function begin(from, to) {
+      const fwd = to > from;
+      const top = fwd ? from : to, under = fwd ? to : from;
+      pages.forEach((p, k) => p.el.classList.toggle('on', k === top || k === under));
+      pages[under].el.style.zIndex = 1;
+      pages[top].el.style.zIndex = 3;
+      cast.style.display = 'block';
+      flip = { fwd, top, under, to, theta: fwd ? 0 : 180, raf: 0 };
+      draw(flip.theta);
+    }
+
+    // theta: 0 = top page flat on the right, 180 = turned over to the left of the spine.
+    function draw(theta) {
+      flip.theta = theta;
+      const r = theta * Math.PI / 180;
+      const top = pages[flip.top].el, under = pages[flip.under].el;
+      top.style.transform = `rotateY(${-theta}deg)`;
+      shade(top, Math.min(1, theta / 90) * 0.7, Math.min(1, (180 - theta) / 90) * 0.6);
+      shade(under, (1 - theta / 180) * 0.55, 0);
+      const x = stack.clientWidth * Math.cos(r);
+      cast.style.transform = `translateX(${Math.max(0, x).toFixed(1)}px)`;
+      cast.style.opacity = theta < 90 ? Math.sin(r) : 0;
+    }
+
+    function animateTo(target, done) {
+      cancelAnimationFrame(flip.raf);
+      const start = flip.theta, dist = target - start;
+      const ms = reduce.matches ? 0 : 160 + Math.abs(dist) / 180 * 560;
+      const t0 = performance.now();
+      const ease = t => 1 - Math.pow(1 - t, 3);
+      const step = now => {
+        const t = ms ? Math.min(1, (now - t0) / ms) : 1;
+        draw(start + dist * ease(t));
+        if (t < 1) flip.raf = requestAnimationFrame(step); else done();
+      };
+      flip.raf = requestAnimationFrame(step);
+    }
+
+    function goTo(i) {
+      i = Math.max(0, Math.min(pages.length - 1, i));
+      if (flip) settle(flip.to);
+      if (i === current) return;
+      begin(current, i);
+      animateTo(flip.fwd ? 180 : 0, () => settle(i));
+    }
+
     prev.onclick = () => goTo(current - 1);
     next.onclick = () => goTo(current + 1);
-    book.addEventListener('click', e => { const t = e.target.closest('[data-go]'); if (t) goTo(+t.dataset.go); });
+
+    // Drag to turn: the page follows your finger and finishes (or falls back) on release.
+    let drag = null, swallowClick = false;
+    book.addEventListener('pointerdown', e => {
+      if (e.button > 0 || flip) return;
+      drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, active: false, hist: [] };
+    });
+    book.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+      if (!drag.active) {
+        if (Math.abs(dx) < 10 || Math.abs(dx) < Math.abs(dy) * 1.2) return;
+        const to = current + (dx < 0 ? 1 : -1);
+        if (to < 0 || to >= pages.length) { drag = null; return; }
+        drag.active = true;
+        book.setPointerCapture(e.pointerId);
+        book.classList.add('dragging');
+        begin(current, to);
+      }
+      drag.hist.push([e.timeStamp, dx]);
+      if (drag.hist.length > 6) drag.hist.shift();
+      const f = Math.min(1, Math.max(0, Math.abs(dx) / (stack.clientWidth * 0.85)));
+      draw(flip.fwd ? f * 180 : 180 - f * 180);
+    });
+    const release = e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag; drag = null;
+      if (!d.active) return;
+      book.classList.remove('dragging');
+      swallowClick = true; setTimeout(() => swallowClick = false, 0);
+      const [ta, xa] = d.hist[0] || [0, 0], [tb, xb] = d.hist[d.hist.length - 1] || [1, 0];
+      const v = (xb - xa) / Math.max(1, tb - ta); // px per ms, negative = towards the left
+      const progressDone = flip.fwd ? flip.theta / 180 : 1 - flip.theta / 180;
+      const fling = flip.fwd ? v < -0.35 : v > 0.35;
+      const back = flip.fwd ? v > 0.35 : v < -0.35;
+      const commit = e.type !== 'pointercancel' && !back && (fling || progressDone > 0.35);
+      const to = flip.to, from = current;
+      animateTo(commit === flip.fwd ? 180 : 0, () => settle(commit ? to : from));
+    };
+    book.addEventListener('pointerup', release);
+    book.addEventListener('pointercancel', release);
+    book.addEventListener('click', e => {
+      if (swallowClick) { e.stopPropagation(); e.preventDefault(); return; }
+      const t = e.target.closest('[data-go]'); if (t) goTo(+t.dataset.go);
+    }, true);
 
     addEventListener('keydown', e => {
       if (search.classList.contains('open')) { if (e.key === 'Escape') closeSearch(); return; }
@@ -380,7 +483,7 @@
     const q = document.getElementById('q');
     const results = document.getElementById('results');
     const chips = document.getElementById('chips');
-    const filters = new Set();
+    let filter = null; // one filter at a time
     const index = items.map(b => ({ b, name: norm(b.naam), all: norm(`${b.nr} ${b.naam} ${b.abv || ''} ${b.tekst}`) }));
 
     function highlight(text, terms) {
@@ -399,11 +502,9 @@
     function render() {
       const terms = norm(q.value.trim()).split(/\s+/).filter(Boolean);
       const list = index.filter(({ b, all }) => {
-        if (filters.has('vat') && !b.vat) return false;
-        if (filters.has('nonalc') && !isNonAlc(b)) return false;
-        if (filters.has('trappist') && !b.trappist) return false;
-        if (filters.has('sterk') && !(abvNum(b) >= 8)) return false;
-        if (filters.has('wijn') && b.type !== 'wijn') return false;
+        if (filter === 'vat' && !b.vat) return false;
+        if (filter === 'nonalc' && !isNonAlc(b)) return false;
+        if (filter === 'wijn' && b.type !== 'wijn') return false;
         return terms.every(t => all.includes(t) || (t.length > 5 && all.includes(t.slice(0, -2))));
       }).map(r => {
         // rank: exact number > name starts with > name contains > description only
@@ -415,10 +516,10 @@
         return { ...r, score };
       }).sort((a, z) => a.score - z.score);
 
-      if (!list.length) { results.innerHTML = `<li class="empty">Geen bier gevonden voor “${esc(q.value)}”.</li>`; return; }
+      if (!list.length) { results.innerHTML = `<li class="empty">Niets gevonden${q.value ? ` voor “${esc(q.value)}”` : ''}.</li>`; return; }
       results.innerHTML = list.map(({ b, score }) => {
         const thumb = b.type === 'wijn' ? `<span class="ph">🍷</span>` : `<img src="${img(b)}" alt="" loading="lazy" />`;
-        const meta = [b.type === 'wijn' ? 'Wijn' : 'Nr. ' + b.nr, b.vat && "van 't vat", isNonAlc(b) && 'alcoholvrij', b.trappist && 'trappist', terms.length && score === 3 && 'gevonden in beschrijving'].filter(Boolean).join(' · ');
+        const meta = [b.type === 'wijn' ? 'Wijn' : 'Nr. ' + b.nr, b.vat && 'op tap', isNonAlc(b) && 'alcoholvrij', b.trappist && 'trappist', terms.length && score === 3 && 'gevonden in beschrijving'].filter(Boolean).join(' · ');
         return `<li><button data-go="${pageOf[b.nr]}">${thumb}<span><strong>${highlight(b.naam, terms)}</strong><span class="meta">${meta}</span></span><span class="pct">${esc(b.abv || '')}</span></button></li>`;
       }).join('');
     }
@@ -430,26 +531,25 @@
     search.addEventListener('click', e => {
       if (e.target === search) return closeSearch();
       const t = e.target.closest('[data-go]');
-      if (t) { closeSearch(); goTo(+t.dataset.go, false); }
+      if (t) { closeSearch(); goTo(+t.dataset.go); }
     });
     q.addEventListener('input', render);
     q.addEventListener('keydown', e => { if (e.key === 'Enter') { const first = results.querySelector('[data-go]'); if (first) first.click(); } });
     chips.addEventListener('click', e => {
       const c = e.target.closest('.chip'); if (!c) return;
-      const on = c.getAttribute('aria-pressed') !== 'true';
-      c.setAttribute('aria-pressed', on);
-      on ? filters.add(c.dataset.f) : filters.delete(c.dataset.f);
+      filter = filter === c.dataset.f ? null : c.dataset.f;
+      chips.querySelectorAll('.chip').forEach(x => x.setAttribute('aria-pressed', x.dataset.f === filter));
       render();
     });
 
     // ---------- Deep link (#12 opens beer 12, handy for a QR code per table) ----------
-    function fromHash() {
+    function fromHash(animate) {
       const key = decodeURIComponent(location.hash.slice(1)).toLowerCase();
-      const i = pages.findIndex(p => p.key.toLowerCase() === key);
-      if (i > 0) goTo(i, false); else onScroll();
+      const i = Math.max(0, pages.findIndex(p => p.key.toLowerCase() === key));
+      animate === true ? goTo(i) : settle(i);
     }
-    addEventListener('hashchange', fromHash);
-    requestAnimationFrame(fromHash);
+    addEventListener('hashchange', () => fromHash(true));
+    fromHash();
   </script>
 </body>
 </html>
