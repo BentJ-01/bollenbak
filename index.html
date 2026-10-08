@@ -64,7 +64,12 @@
       display: grid; place-items: center; padding: 8px 16px 12px 22px;
       touch-action: pan-y; z-index: 1;
     }
-    .book.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; }
+    /* Scrollable page content is its own touch scope, so it needs pan-y too: otherwise the
+       browser claims horizontal swipes there and the page never turns. */
+    .book, .book * { touch-action: pan-y; }
+    .book { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
+    .book img { -webkit-user-drag: none; user-select: none; }
+    .book.dragging { cursor: grabbing; }
     .stack { position: relative; width: 100%; max-width: 440px; height: 100%; max-height: 820px; perspective: 2200px; }
     /* the unread rest of the booklet, peeking out at the right and bottom */
     .edges {
@@ -84,6 +89,7 @@
     /* reverse side of a page while it is being turned */
     .back {
       transform: rotateY(180deg); border-radius: 14px 6px 6px 14px;
+      pointer-events: none; /* otherwise this hidden face swallows taps and scrolling on the page */
       background: linear-gradient(270deg, rgba(0,0,0,.16), transparent 22px), linear-gradient(90deg, #f3ebdc, var(--paper) 70%);
     }
     /* booklet spine */
@@ -510,6 +516,7 @@
       const ms = Math.max(160, Math.min(420, Math.abs(target - th) / 180 * 520 / Math.max(1, Math.abs(v))));
       animateTo(target, ms, easeOut, () => settle(commit ? dest : from));
     };
+    book.addEventListener('dragstart', e => e.preventDefault());
     book.addEventListener('pointerup', release);
     book.addEventListener('pointercancel', release);
 
