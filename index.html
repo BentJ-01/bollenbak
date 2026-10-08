@@ -76,7 +76,11 @@
       position: absolute; inset: 0; z-index: 0; border-radius: 6px 14px 14px 6px; background: #efe6d6;
       box-shadow: 0 18px 40px rgba(0,0,0,.45);
     }
-    .page { position: absolute; inset: 0; display: none; transform-origin: left center; transform-style: preserve-3d; }
+    .page { position: absolute; inset: 0; display: none; transform-origin: left center; }
+    /* 3D only while a page is turning: at rest pages are flat, so scrolling and taps behave normally (iOS Safari) */
+    .page.turning { transform-style: preserve-3d; will-change: transform; }
+    .back { display: none; }
+    .page.turning .back { display: block; }
     .page.on { display: block; }
     .sheet, .back {
       position: absolute; inset: 0; overflow: hidden;
@@ -103,7 +107,6 @@
       background: linear-gradient(90deg, rgba(0,0,0,.5), rgba(0,0,0,.12) 55%, rgba(0,0,0,.04));
     }
     .back .shade { background: linear-gradient(270deg, rgba(0,0,0,.45), rgba(0,0,0,.1) 70%); }
-    .page.on { will-change: transform; }
     .page.idle { visibility: hidden; }
     /* shadow the lifted page casts on the page underneath */
     .cast {
@@ -113,7 +116,7 @@
 
     /* ---------- Beer page ---------- */
     .beer .sheet { display: flex; flex-direction: column; }
-    .beer .scroll { flex: 1; overflow-y: auto; display: flex; flex-direction: column; padding: 22px 22px 0 30px; }
+    .beer .scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; display: flex; flex-direction: column; padding: 22px 22px 0 30px; }
     .beer h2 {
       font-family: Oswald, sans-serif; font-weight: 600; text-transform: uppercase;
       font-size: clamp(26px, 7.5vw, 34px); line-height: 1.02; margin: 0 0 10px; color: var(--red);
@@ -183,7 +186,7 @@
     .hint { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px; color: var(--gold); animation: nudge 1.6s ease-in-out infinite; }
     @keyframes nudge { 50% { transform: translateX(6px); } }
 
-    .plain .scroll { height: 100%; overflow-y: auto; padding: 26px 22px 26px 34px; }
+    .plain .scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 26px 22px 26px 34px; }
     .plain h2 { font-family: Oswald, sans-serif; text-transform: uppercase; font-size: 30px; margin: 0 0 4px; color: var(--red); }
     .plain .sub { color: var(--muted); margin: 0 0 18px; }
     .toc { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 16px; }
@@ -400,6 +403,7 @@
         const near = Math.abs(k - i) <= 1;
         p.el.classList.toggle('on', near);
         p.el.classList.toggle('idle', near && k !== i);
+        p.el.classList.remove('turning');
         p.el.style.zIndex = k === i ? 2 : 1;
         p.el.style.transform = k < i ? 'rotateY(-180deg)' : '';
         frontShade(p.el).style.opacity = 0;
@@ -431,6 +435,7 @@
       pages.forEach((p, k) => { if (k !== top && k !== under && p.el.classList.contains('on')) p.el.classList.add('idle'); });
       pages[under].el.style.zIndex = 1;
       pages[top].el.style.zIndex = 4;
+      pages[top].el.classList.add('turning');
       flip = { top: pages[top].el, under: pages[under].el, dest, fwd, theta: fwd ? 0 : 180, raf: 0 };
       draw(flip.theta);
     }
