@@ -150,13 +150,30 @@
     .abv small { font-weight: 500; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; opacity: .7; margin-left: 8px; }
 
     /* ---------- Cover / back / wine / contents ---------- */
-    .cover .sheet, .back .sheet { background: #2a1a10; display: flex; flex-direction: column; }
-    .cover .art, .back .art { flex: 1; background-size: cover; background-position: 32% center; }
+    .back .sheet { background: #2a1a10; display: flex; flex-direction: column; }
+    .back .art { flex: 1; }
     .back .art { background-position: center; background-size: contain; background-repeat: no-repeat; background-color: #3a2414; }
-    .cover .foot { padding: 18px 22px 22px 30px; color: #f5e7cf; background: linear-gradient(180deg, #2a1a10, #1a0f08); }
-    .cover h1 { font-family: Oswald, sans-serif; font-size: 30px; margin: 0; text-transform: uppercase; letter-spacing: .02em; }
-    .cover p { margin: 4px 0 0; opacity: .8; }
-    .cover .date { opacity: 1; color: var(--gold); font-weight: 600; }
+    /* cover: the flyer's layers re-arranged for a portrait page */
+    .cover .sheet {
+      container-type: size;
+      background: #3b2213 url(img/cover/bg.webp) 74% 100% / cover no-repeat;
+    }
+    .cv-top { position: absolute; left: 0; right: 0; top: 0; padding: 7cqh 7cqw 0 9cqw; text-align: right; z-index: 3; }
+    .cv-date { margin: 0; color: #fff; font-weight: 700; font-size: clamp(17px, 6.4cqw, 28px); letter-spacing: .01em; text-shadow: 0 2px 6px rgba(0,0,0,.4); }
+    .cv-title { display: block; width: 100%; margin: 1.2cqh 0 1.6cqh; filter: drop-shadow(0 3px 6px rgba(0,0,0,.45)); }
+    .cv-badge {
+      display: inline-block; background: #d2232a; color: #fff; font-weight: 700; font-size: clamp(15px, 5.4cqw, 24px);
+      padding: .18em .6em; border-radius: 3px; box-shadow: 0 6px 14px rgba(0,0,0,.35);
+    }
+    .cv-photo { position: absolute; z-index: 1; right: 4cqw; top: 33cqh; width: 64cqw; filter: drop-shadow(6px 10px 12px rgba(0,0,0,.45)); }
+    .cv-glass { position: absolute; z-index: 2; left: 5cqw; bottom: 13cqh; height: 50cqh; filter: drop-shadow(14px 18px 14px rgba(0,0,0,.35)); }
+    .cv-logo { position: absolute; z-index: 2; right: 7cqw; bottom: 15cqh; width: 38cqw; filter: drop-shadow(0 8px 14px rgba(0,0,0,.45)); }
+    .cv-foot {
+      position: absolute; z-index: 3; left: 0; right: 0; bottom: 0; padding: 12cqh 7cqw 3.2cqh 9cqw; color: #f5e7cf;
+      background: linear-gradient(180deg, transparent, rgba(20,11,5,.75) 55%);
+    }
+    .cv-foot p { margin: 0; font-size: 15px; opacity: .85; }
+    .cv-foot .hint { margin-top: 6px; }
     .hint { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 14px; color: var(--gold); animation: nudge 1.6s ease-in-out infinite; }
     @keyframes nudge { 50% { transform: translateX(6px); } }
 
@@ -287,10 +304,15 @@
     }
 
     addPage('cover', `
-      <div class="art" style="background-image:url(img/cover.webp)" role="img" aria-label="Bieravond — proef meer dan 60 bieren"></div>
-      <div class="foot">
-        <h1>Het bierboekje</h1>
-        <p class="date">7 &amp; 8 november 2026</p>
+      <div class="cv-top">
+        <p class="cv-date">7 &amp; 8 november 2026</p>
+        <img class="cv-title" src="img/cover/title.webp" alt="Bieravond" />
+        <span class="cv-badge">Proef meer dan 60 bieren</span>
+      </div>
+      <img class="cv-photo" src="img/cover/photo.webp" alt="" />
+      <img class="cv-glass" src="img/cover/glass.webp" alt="" />
+      <img class="cv-logo" src="img/cover/logo.webp" alt="Bieren geleverd door 't Klaverblad" />
+      <div class="cv-foot">
         <p>${items.filter(b => b.type !== 'wijn').length} bieren · ${items.filter(isNonAlc).length} alcoholvrij · 2 wijnen</p>
         <div class="hint">Swipe of tik om te bladeren →</div>
       </div>`, 'cover');
