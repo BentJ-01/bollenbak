@@ -133,6 +133,7 @@
       bottom: 60px; height: calc(100% - 64px); width: auto; max-width: 70%; object-fit: contain; object-position: bottom;
       filter: drop-shadow(10px 14px 10px rgba(0,0,0,.45));
     }
+    .can .stage img { height: calc((100% - 64px) * .58); max-height: 300px; } /* a can is much shorter than a bottle */
     .nr {
       position: absolute; left: 30px; bottom: 76px; z-index: 2;
       width: 44px; height: 44px; border-radius: 50%; border: 2.5px solid #fff;
@@ -246,7 +247,7 @@
 </head>
 <body>
   <header class="topbar">
-    <div class="brand">Bieravond<small>Scouts Vosselaar · 7 &amp; 8 november 2026</small></div>
+    <div class="brand">Bieravond<small>Scouts Vosselaar · 7 november 2026</small></div>
     <div class="spacer"></div>
     <button class="icon-btn search-btn" id="openSearch" aria-label="Zoek een bier">
       <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -283,7 +284,9 @@
     const items = window.BIEREN;
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const norm = s => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[’‘]/g, "'");
-    const img = b => `img/bieren/${String(b.nr).padStart(2, '0')}.webp`;
+    // photos are named after the beer, so renumbering the booklet never mixes them up
+    const slug = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const img = b => `img/bieren/${slug(b.naam)}.webp`;
     const abvNum = b => parseFloat(String(b.abv || '0').replace(',', '.'));
     const isNonAlc = b => b.type === 'alcoholvrij';
     const glassSvg = `<svg class="glass" viewBox="0 0 100 160" aria-hidden="true"><path d="M22 8h56c2 30-6 52-28 56C28 60 20 38 22 8Z" fill="#f1d36a" stroke="#8a6d1a" stroke-width="3"/><path d="M22 8h56l-1 14H23Z" fill="#fff" opacity=".7"/><path d="M50 64v70M30 150h40" stroke="#8a6d1a" stroke-width="4" stroke-linecap="round"/></svg>`;
@@ -302,7 +305,7 @@
 
     addPage('cover', `
       <div class="cv-top">
-        <p class="cv-date">7 &amp; 8 november 2026</p>
+        <p class="cv-date">7 november 2026</p>
         <img class="cv-title" src="img/cover/title.webp" alt="Bieravond" />
         <span class="cv-badge">Proef meer dan 60 bieren</span>
       </div>
@@ -337,7 +340,7 @@
         b.trappist && `<span class="tag trap">Trappist</span>`,
         isNonAlc(b) && `<span class="tag na">Alcoholvrij</span>`,
       ].filter(Boolean).join('');
-      pageOf[b.nr] = addPage('beer' + (isNonAlc(b) ? ' nonalc' : ''), `
+      pageOf[b.nr] = addPage('beer' + (isNonAlc(b) ? ' nonalc' : '') + (b.blik ? ' can' : ''), `
         <div class="scroll">
           <h2>${esc(b.naam)}</h2>
           ${tags ? `<div class="tags">${tags}</div>` : ''}
@@ -518,18 +521,22 @@
       flip.raf = requestAnimationFrame(step);
     }
 
+    // the page a running turn will end on (a page that falls back ends where it started)
+    const landing = () => flip.end ?? flip.dest;
+
     function goTo(i) {
       i = Math.max(0, Math.min(pages.length - 1, i));
-      if (flip) settle(flip.dest); // tapping again while a page is turning: finish it at once
+      if (flip) settle(landing()); // tapping again while a page is turning: finish it at once
       if (i === current) return;
       // turned by a button or a tap: lift the page by its bottom corner
       const W = stack.clientWidth, H = stack.clientHeight, G = { x: W * 0.97, y: H * 0.9 };
       begin(i, G, 0.22);
+      flip.end = i;
       animateTo(flip.fwd ? { x: -G.x, y: G.y } : { ...G }, 680, easeInOut, () => settle(i));
     }
 
     // relative turns count from where the page is heading, so quick repeated taps each turn a page
-    const turn = d => goTo((flip ? flip.dest : current) + d);
+    const turn = d => goTo((flip ? landing() : current) + d);
     prev.onclick = () => turn(-1);
     next.onclick = () => turn(1);
     tocBtn.onclick = () => goTo(tocIdx);
@@ -538,7 +545,7 @@
     let drag = null, swallowClick = false;
     book.addEventListener('pointerdown', e => {
       if (e.button > 0) return;
-      if (flip && !drag) settle(flip.dest);
+      if (flip && !drag) settle(landing());
       drag = { id: e.pointerId, x0: e.clientX, y0: e.clientY, active: false, hist: [] };
     });
     book.addEventListener('pointermove', e => {
@@ -560,7 +567,7 @@
         begin(dest, drag.G);
       }
       drag.hist.push([e.timeStamp, e.clientX]);
-      if (drag.hist.length > 5) drag.hist.shift();
+      if (drag.hist.length > 8) drag.hist.shift();
       const G = drag.G;
       // backward the fold (the visible edge of the returning page) follows your finger
       const x = flip.fwd ? G.x + dx : -G.x + 2 * dx;
@@ -572,8 +579,9 @@
       if (!d.active) return;
       book.classList.remove('dragging');
       swallowClick = true; setTimeout(() => swallowClick = false, 0);
-      const h = d.hist, [ta, xa] = h[0] || [0, 0], [tb, xb] = h[h.length - 1] || [1, 0];
-      const v = (xb - xa) / Math.max(1, tb - ta); // px/ms, negative = towards the left
+      // speed over the last 100 ms before letting go: holding still first means no fling
+      const h = d.hist.filter(([t]) => e.timeStamp - t < 100);
+      const v = h.length < 2 ? 0 : (h[h.length - 1][1] - h[0][1]) / Math.max(16, e.timeStamp - h[0][0]); // px/ms, negative = towards the left
       const { fwd, G, P, dest } = flip, from = current;
       const prog = (G.x - P.x) / (2 * G.x); // 0 = flat on the right, 1 = turned over
       let commit = fwd ? (v < -0.3 || (v <= 0.3 && prog > 0.3)) : (v > 0.3 || (v >= -0.3 && prog < 0.7));
@@ -582,7 +590,8 @@
       const target = turned ? { x: -G.x, y: G.y } : { ...G };
       const left = Math.abs((turned ? 1 : 0) - prog);
       const ms = Math.max(170, Math.min(560, (180 + 420 * left) / Math.max(1, Math.abs(v) * 0.8)));
-      animateTo(target, ms, easeOut, () => settle(commit ? dest : from));
+      flip.end = commit ? dest : from;
+      animateTo(target, ms, easeOut, () => settle(flip.end));
     };
     book.addEventListener('dragstart', e => e.preventDefault());
     book.addEventListener('pointerup', release);
